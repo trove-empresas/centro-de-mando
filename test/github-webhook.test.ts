@@ -10,7 +10,8 @@ const env: Env = {
 
 function fakeTelegram() {
   const sendMessage = vi.fn(async () => {});
-  return { client: { sendMessage } as TelegramClient, sendMessage };
+  const answerCallbackQuery = vi.fn(async () => {});
+  return { client: { sendMessage, answerCallbackQuery } as TelegramClient, sendMessage, answerCallbackQuery };
 }
 
 async function sign(body: string, secret: string): Promise<string> {
@@ -133,5 +134,48 @@ describe("webhook de GitHub", () => {
     spy.mockRestore();
     expect(logged).not.toContain("Duda de prueba");
     expect(logged).not.toContain("secreto-github-de-prueba");
+  });
+});
+
+describe("aviso de PR nueva", () => {
+  const pr = (repo = "criterio", action = "opened") =>
+    JSON.stringify({
+      action,
+      pull_request: { number: 7, title: "PR de prueba", html_url: `https://github.com/trove-empresas/${repo}/pull/7` },
+      repository: { full_name: `trove-empresas/${repo}` },
+    });
+
+  it("PR ficticia abierta: mensaje a Gonzalo con título, enlace y los tres botones", async () => {
+    const t = fakeTelegram();
+    const res = await handleGitHubWebhook(await req({ body: pr(), event: "pull_request" }), env, t.client);
+    expect(res.status).toBe(200);
+    expect(t.sendMessage).toHaveBeenCalledTimes(1);
+    const [chatId, text, buttons] = t.sendMessage.mock.calls[0] as unknown as [number, string, { text: string; data: string }[]];
+    expect(chatId).toBe(1001);
+    expect(text).toContain("criterio#7");
+    expect(text).toContain("PR de prueba");
+    expect(text).toContain("https://github.com/trove-empresas/criterio/pull/7");
+    expect(buttons.map((b) => b.data)).toEqual(["pr:a:criterio:7", "pr:c:criterio:7", "pr:r:criterio:7"]);
+    expect(buttons.map((b) => b.text)).toEqual(["✅ Aprobar", "✏️ Pedir cambios", "❌ Rechazar"]);
+  });
+
+  it("ignora PR de un repo que no está en la lista", async () => {
+    const t = fakeTelegram();
+    await handleGitHubWebhook(await req({ body: pr("otro-repo"), event: "pull_request" }), env, t.client);
+    expect(t.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("ignora acciones distintas de «opened»", async () => {
+    const t = fakeTelegram();
+    await handleGitHubWebhook(await req({ body: pr("criterio", "closed"), event: "pull_request" }), env, t.client);
+    expect(t.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("firma falsa en una PR: rechazada sin enviar nada", async () => {
+    const t = fakeTelegram();
+    const falsa = await sign(pr(), "otro-secreto");
+    const res = await handleGitHubWebhook(await req({ body: pr(), event: "pull_request", signature: falsa }), env, t.client);
+    expect(res.status).toBe(401);
+    expect(t.sendMessage).not.toHaveBeenCalled();
   });
 });
