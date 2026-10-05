@@ -3,10 +3,9 @@
 > Estado: **borrador preparado por un agente (issue #19).** Nada de esto se ha
 > ejecutado ni comprobado contra Cloudflare, Telegram o GitHub reales: los
 > nombres de menús pueden haber cambiado, así que si algo no coincide, para y
-> pregunta. **No hay todavía despliegue automático**: el sistema de permisos
-> bloqueó crear el workflow de despliegue en la ejecución automática y hay que
-> hacerlo en sesión interactiva (ver issue #19). Los pasos 1–2 y 6 dependen de
-> ese workflow; el resto vale igual.
+> pregunta. El despliegue automático ya está preparado (workflow
+> «Desplegar», ver el final de esta guía), pero no publicará nada hasta que
+> completes el paso 2.
 
 Resumen: son seis pasos, todos desde el navegador o la app de Telegram. Los
 valores secretos **nunca** se pegan en chats, issues ni PR.
@@ -18,6 +17,9 @@ valores secretos **nunca** se pegan en chats, issues ni PR.
 2. No hace falta añadir dominio ni tarjeta.
 3. Anota tu **Account ID**: en el panel, menú **Workers & Pages**; aparece a
    la derecha (no es secreto, pero lo necesitarás en el paso 2).
+4. En **Workers & Pages**, si te pide elegir un **subdominio workers.dev**,
+   elige uno (por ejemplo tu nombre). Sin él, la primera publicación falla
+   con un error que menciona «workers.dev subdomain».
 
 ## Paso 2 — Token de API de Cloudflare (permisos mínimos) como secreto de GitHub
 
@@ -33,6 +35,12 @@ Es la llave con la que GitHub publicará el bot en tu cuenta de Cloudflare.
    **Secrets and variables** → **Actions** → **New repository secret**.
    - Nombre `CLOUDFLARE_API_TOKEN`, valor: el token.
    - Otro secreto: `CLOUDFLARE_ACCOUNT_ID`, valor: el Account ID del paso 1.
+5. **Primera publicación:** en GitHub, pestaña **Actions** → en la lista de
+   la izquierda **Desplegar** → botón **Run workflow** (rama `main`) →
+   **Run workflow**. En un par de minutos debe salir en verde con dos
+   pasos: «Decidir si hay que desplegar» y «Desplegar en Cloudflare». Si
+   «Desplegar en Cloudflare» aparece tachado (saltado), es que GitHub no ve
+   alguno de los dos secretos: revisa sus nombres.
 
 ## Paso 3 — Token de GitHub de grano fino, ID de Telegram y secretos de webhook
 
@@ -43,8 +51,8 @@ aparte, sin pegarlos en ningún sitio compartido.
 
 ## Paso 4 — Secretos del bot en el panel de Cloudflare
 
-Una vez el bot esté publicado por primera vez (aparecerá en **Workers &
-Pages** con el nombre `centro-de-mando`):
+Una vez el bot esté publicado por primera vez (paso 2, punto 5; aparecerá
+en **Workers & Pages** con el nombre `centro-de-mando`):
 
 1. Entra en el Worker → **Settings** → **Variables and Secrets** →
    **Add**. En cada una elige el tipo **Secret** (cifrado).
@@ -87,6 +95,26 @@ Debe responder `{"ok":true,...}`. Si da error, copia solo el mensaje de error
 2. Pon la etiqueta `necesita-gonzalo` a una issue de prueba: debe llegarte
    aviso.
 3. Si algo falla, no pegues secretos: dime qué ves y lo revisamos juntos.
+
+## Cómo se publica a partir de ahora
+
+No tienes que hacer nada: el workflow **Desplegar** publica en Cloudflare lo
+que haya en `main`.
+
+- **Cuando fusionas una PR** (a mano o con «Aprobar» desde Telegram), se
+  publica en unos minutos.
+- **Si la PR la fusiona GitHub solo** (fusión automática), GitHub no avisa
+  a los demás workflows de esa fusión. Para cubrirlo, el workflow se revisa
+  solo **cada hora**: si lo último de `main` no está publicado, lo publica.
+  En ese caso el cambio puede tardar hasta una hora en llegar al bot.
+- **Para publicar ya**, sin esperar: Actions → **Desplegar** → **Run
+  workflow**.
+- Antes de publicar vuelve a pasar las pruebas: si fallan, no publica y el
+  bot sigue con la versión anterior.
+- Los secretos del paso 4 no se tocan al publicar.
+- Si una publicación falla, GitHub te avisará por correo (y la revisión de
+  cada hora lo reintentará, así que hasta que se arregle puedes recibir un
+  aviso por hora). Copia el mensaje de error, sin secretos, al chat.
 
 ## Si un secreto se filtra
 
