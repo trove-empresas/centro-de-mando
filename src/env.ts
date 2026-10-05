@@ -3,6 +3,8 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   TELEGRAM_ALLOWED_USER_ID?: string;
   GITHUB_TOKEN?: string;
+  /** Secreto con el que GitHub firma sus avisos (webhook). */
+  GITHUB_WEBHOOK_SECRET?: string;
   /** Repos permitidos, separados por comas (nombre corto o «dueño/repo»). Si falta, se usa la lista por defecto. */
   GITHUB_ALLOWED_REPOS?: string;
 }
