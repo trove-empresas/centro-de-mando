@@ -1,0 +1,15 @@
+# Configuración del Worker en Cloudflare (issue #19).
+# Aquí NO van secretos: los cinco secretos del bot se guardan en el panel de
+# Cloudflare (ver docs/guia-publicacion.md, paso 4) y sobreviven a cada
+# despliegue.
+name = "centro-de-mando"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Dirección pública https://centro-de-mando.<subdominio>.workers.dev, a la que
+# Telegram y GitHub envían sus avisos.
+workers_dev = true
+
+# Conserva las variables de texto añadidas desde el panel (por ejemplo
+# GITHUB_ALLOWED_REPOS); sin esto, cada despliegue las borraría.
+keep_vars = true

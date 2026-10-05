@@ -13,5 +13,11 @@ npm run lint
 ```
 
 Las variables necesarias están (solo sus nombres) en `.env.example`. Los
-valores reales nunca entran en el repositorio. No hay despliegue configurado
-todavía (issue #13).
+valores reales nunca entran en el repositorio.
+
+## Despliegue
+
+`wrangler.toml` configura el Worker y `.github/workflows/desplegar.yml` lo
+publica en Cloudflare con lo que hay en `main` (detalle y motivo en
+`docs/decisiones.md`; pasos para Gonzalo en `docs/guia-publicacion.md`).
+`npx wrangler deploy --dry-run` comprueba que compila sin publicar nada.

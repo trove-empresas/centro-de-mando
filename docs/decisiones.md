@@ -20,6 +20,34 @@ indica en ambas.
 
 ## Decisiones
 
+## 2026-10-05 — Despliegue automático a Cloudflare, también con fusión automática
+
+- **Decisión:** el workflow `.github/workflows/desplegar.yml` publica el
+  Worker con `wrangler deploy` en cada push a `main`, a mano
+  (`workflow_dispatch`) y en una **revisión cada hora** (`schedule`) que
+  despliega solo si el último commit de `main` aún no tiene un despliegue
+  correcto. Antes de publicar vuelve a pasar pruebas, tipos y lint. Sin los
+  secretos de Cloudflare se salta sin fallar.
+- **Motivo:** las fusiones hechas con `GITHUB_TOKEN` (fusión automática de
+  `criterio/procedimientos/fusion-automatica.md`) no disparan otros
+  workflows, ni `push` ni `pull_request: closed`. La revisión programada sí
+  se lanza siempre y no necesita credenciales nuevas. Cada hora (y no cada
+  15 minutos) porque el repo es privado y cada ejecución consume minutos de
+  Actions: unas 24 al día en la comprobación, que casi nunca despliega.
+- **Alternativas descartadas:**
+  - Que la fusión automática use un token personal o una GitHub App en vez
+    de `GITHUB_TOKEN`: sí dispararía `push`, pero añade otra credencial con
+    permiso de escritura y cambia el mecanismo común de `criterio`.
+  - Lanzar el despliegue desde el workflow de fusión automática
+    (`workflow_dispatch`): ese workflow solo *activa* la fusión; la fusión
+    real ocurre después, cuando pasan las comprobaciones, y no hay ningún
+    evento que la siga.
+  - `workflow_run` tras la CI: la CI de la PR termina antes de la fusión, y
+    la de `main` tampoco se lanza con `GITHUB_TOKEN`.
+  - Entornos de GitHub (`environment:`) para registrar despliegues: crean
+    un ajuste en el repositorio, que solo gestiona Gonzalo.
+- **Estado:** vigente
+
 ## 2026-10-05 — Alojamiento, lenguaje y alcance del centro de mando v1
 
 - **Decisión:** Cloudflare Workers con TypeScript. «Aprobar» en una PR la

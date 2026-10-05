@@ -1,0 +1,88 @@
+name: Desplegar
+
+# Publica el bot en Cloudflare Workers con lo que haya en main (issue #19).
+#
+# Tres formas de lanzarlo:
+# - push a main: cada fusión normal (hecha por una persona).
+# - schedule (cada hora): red de seguridad para las fusiones hechas con el
+#   token interno de GitHub (GITHUB_TOKEN), por ejemplo la fusión automática,
+#   que NO disparan el evento push. Si el último commit de main ya está
+#   desplegado, no hace nada.
+# - workflow_dispatch: a mano desde la pestaña Actions («Run workflow»).
+#
+# Sin los secretos CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID no despliega
+# ni falla: lo deja anotado y termina.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# Nunca dos despliegues a la vez; el que llega espera al anterior.
+concurrency:
+  group: desplegar
+  cancel-in-progress: false
+
+jobs:
+  decidir:
+    name: Decidir si hay que desplegar
+    runs-on: ubuntu-latest
+    outputs:
+      desplegar: ${{ steps.decision.outputs.desplegar }}
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Decidir
+        id: decision
+        env:
+          EVENTO: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          TIENE_CREDENCIALES: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/decidir-despliegue.sh
+
+  desplegar:
+    # decidir-despliegue.sh busca este nombre: si se cambia, cambiarlo allí.
+    name: Desplegar en Cloudflare
+    needs: decidir
+    if: needs.decidir.outputs.desplegar == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Última barrera: nunca se publica código que no pase las comprobaciones.
+      - name: Pruebas
+        run: npm test
+
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Publicar en Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: "false"
+        run: npx wrangler deploy
+
+      - name: Resumen
+        run: echo "Desplegado el commit \`${{ github.sha }}\` (evento \`${{ github.event_name }}\`)." >> "$GITHUB_STEP_SUMMARY"
