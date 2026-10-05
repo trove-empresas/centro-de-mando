@@ -1,8 +1,15 @@
 import type { Env, TelegramClient } from "./env";
+import { prButtons } from "./pr-buttons";
 import { GITHUB_OWNER, allowedRepos } from "./repos";
 
 const SIGNATURE_HEADER = "x-hub-signature-256";
 const NEEDS_LABEL = "necesita-gonzalo";
+
+interface PullRequestEvent {
+  action?: string;
+  pull_request?: { number?: number; title?: string; html_url?: string; draft?: boolean };
+  repository?: { full_name?: string };
+}
 
 interface IssuesEvent {
   action?: string;
@@ -55,14 +62,18 @@ export async function handleGitHubWebhook(
     return new Response("Unauthorized", { status: 401 });
   }
 
-  if (request.headers.get("x-github-event") !== "issues") return new Response(null, { status: 200 });
+  const eventName = request.headers.get("x-github-event");
+  if (eventName !== "issues" && eventName !== "pull_request") return new Response(null, { status: 200 });
 
-  let event: IssuesEvent;
+  let parsed: unknown;
   try {
-    event = JSON.parse(rawBody) as IssuesEvent;
+    parsed = JSON.parse(rawBody);
   } catch {
     return new Response("Bad Request", { status: 400 });
   }
+
+  if (eventName === "pull_request") return notifyNewPr(parsed as PullRequestEvent, env, telegram);
+  const event = parsed as IssuesEvent;
 
   if (event.action !== "labeled" || event.label?.name !== NEEDS_LABEL) return new Response(null, { status: 200 });
 
@@ -77,6 +88,24 @@ export async function handleGitHubWebhook(
   await telegram.sendMessage(
     Number(env.TELEGRAM_ALLOWED_USER_ID),
     `Necesito que mires esto (${NEEDS_LABEL}): ${repo}#${number}${title ? ` — ${title}` : ""}\n${url}`,
+  );
+  return new Response(null, { status: 200 });
+}
+
+/** PR abierta en un repo de la lista: mensaje a Gonzalo con los tres botones. */
+async function notifyNewPr(event: PullRequestEvent, env: Env, telegram: TelegramClient): Promise<Response> {
+  if (event.action !== "opened") return new Response(null, { status: 200 });
+  const fullName = event.repository?.full_name ?? "";
+  const repo = allowedRepos(env.GITHUB_ALLOWED_REPOS).find(
+    (r) => `${GITHUB_OWNER}/${r}`.toLowerCase() === fullName.toLowerCase(),
+  );
+  const { number, title, html_url: url } = event.pull_request ?? {};
+  if (!repo || number === undefined || !url) return new Response(null, { status: 200 });
+
+  await telegram.sendMessage(
+    Number(env.TELEGRAM_ALLOWED_USER_ID),
+    `PR nueva: ${repo}#${number}${title ? ` — ${title}` : ""}\n${url}`,
+    prButtons(repo, number),
   );
   return new Response(null, { status: 200 });
 }

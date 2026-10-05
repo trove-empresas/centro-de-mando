@@ -10,7 +10,8 @@ const env: Env = {
 
 function fakeTelegram() {
   const sendMessage = vi.fn(async () => {});
-  return { client: { sendMessage } as TelegramClient, sendMessage };
+  const answerCallbackQuery = vi.fn(async () => {});
+  return { client: { sendMessage, answerCallbackQuery } as TelegramClient, sendMessage, answerCallbackQuery };
 }
 
 function req(opts: { secret?: string; userId?: number; method?: string; body?: string }) {
@@ -161,5 +162,60 @@ describe("/issue: crear una issue desde Telegram", () => {
     const t = fakeTelegram();
     await handleTelegramWebhook(msg("/issue criterio Algo"), env, t.client);
     expect(t.sendMessage).toHaveBeenCalledWith(77, expect.stringContaining("no está configurado"));
+  });
+});
+
+describe("botones de PR", () => {
+  const press = (data: string, userId = 1001) =>
+    new Request("https://ejemplo.test/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "secreto-de-prueba" },
+      body: JSON.stringify({ callback_query: { id: "cb1", from: { id: userId }, data } }),
+    });
+
+  it("Gonzalo pulsa un botón válido: solo se confirma la recepción", async () => {
+    const t = fakeTelegram();
+    const res = await handleTelegramWebhook(press("pr:a:criterio:7"), env, t.client);
+    expect(res.status).toBe(200);
+    expect(t.answerCallbackQuery).toHaveBeenCalledTimes(1);
+    const [id, text] = t.answerCallbackQuery.mock.calls[0] as unknown as [string, string];
+    expect(id).toBe("cb1");
+    expect(text).toContain("criterio#7");
+    expect(t.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("pulsación de un usuario ajeno: ignorada sin responder", async () => {
+    const t = fakeTelegram();
+    const res = await handleTelegramWebhook(press("pr:a:criterio:7", 9999), env, t.client);
+    expect(res.status).toBe(200);
+    expect(t.answerCallbackQuery).not.toHaveBeenCalled();
+    expect(t.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("repo que no está en la lista: ignorada", async () => {
+    const t = fakeTelegram();
+    await handleTelegramWebhook(press("pr:a:otro-repo:7"), env, t.client);
+    expect(t.answerCallbackQuery).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "basura", "pr:x:criterio:7", "pr:a:criterio:abc", "pr:a:criterio/../x:7"])(
+    "datos mal formados %j: ignorados",
+    async (data) => {
+      const t = fakeTelegram();
+      await handleTelegramWebhook(press(data), env, t.client);
+      expect(t.answerCallbackQuery).not.toHaveBeenCalled();
+    },
+  );
+
+  it("secreto de Telegram incorrecto: rechazada la pulsación", async () => {
+    const t = fakeTelegram();
+    const r = new Request("https://ejemplo.test/telegram", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "malo" },
+      body: JSON.stringify({ callback_query: { id: "cb1", from: { id: 1001 }, data: "pr:a:criterio:7" } }),
+    });
+    const res = await handleTelegramWebhook(r, env, t.client);
+    expect(res.status).toBe(403);
+    expect(t.answerCallbackQuery).not.toHaveBeenCalled();
   });
 });
