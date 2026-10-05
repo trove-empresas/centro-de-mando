@@ -1,9 +1,11 @@
-import type { Env, TelegramClient } from "./env";
+import type { Env, GitHubClient, TelegramClient } from "./env";
+import { handleIssueCommand, isIssueCommand } from "./issue";
+import { allowedRepos } from "./repos";
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
 interface TelegramUpdate {
-  message?: { chat?: { id?: number }; from?: { id?: number } };
+  message?: { chat?: { id?: number }; from?: { id?: number }; text?: string };
 }
 
 /** Comparación en tiempo constante (no revela cuántos caracteres coinciden). */
@@ -22,6 +24,7 @@ export async function handleTelegramWebhook(
   request: Request,
   env: Env,
   telegram: TelegramClient,
+  github?: GitHubClient,
 ): Promise<Response> {
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
@@ -47,6 +50,13 @@ export async function handleTelegramWebhook(
   const fromId = update.message?.from?.id;
   const chatId = update.message?.chat?.id;
   if (fromId === undefined || chatId === undefined || String(fromId) !== env.TELEGRAM_ALLOWED_USER_ID) {
+    return new Response(null, { status: 200 });
+  }
+
+  const text = update.message?.text ?? "";
+  if (isIssueCommand(text)) {
+    const { reply } = await handleIssueCommand(text, allowedRepos(env.GITHUB_ALLOWED_REPOS), github);
+    await telegram.sendMessage(chatId, reply);
     return new Response(null, { status: 200 });
   }
 
