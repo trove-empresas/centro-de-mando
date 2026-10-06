@@ -1,4 +1,5 @@
 import type { Env, GitHubClient, TelegramClient } from "./env";
+import { handleEstadoCommand, isEstadoCommand } from "./estado";
 import { handleIssueCommand, isIssueCommand } from "./issue";
 import { parsePrButton } from "./pr-buttons";
 import { allowedRepos } from "./repos";
@@ -61,6 +62,12 @@ export async function handleTelegramWebhook(
   const text = update.message?.text ?? "";
   if (isIssueCommand(text)) {
     const { reply } = await handleIssueCommand(text, allowedRepos(env.GITHUB_ALLOWED_REPOS), github);
+    await telegram.sendMessage(chatId, reply);
+    return new Response(null, { status: 200 });
+  }
+
+  if (isEstadoCommand(text)) {
+    const { reply } = await handleEstadoCommand(allowedRepos(env.GITHUB_ALLOWED_REPOS), github);
     await telegram.sendMessage(chatId, reply);
     return new Response(null, { status: 200 });
   }

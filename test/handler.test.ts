@@ -97,7 +97,7 @@ describe("/issue: crear una issue desde Telegram", () => {
       number: 42,
       url: `https://github.com/trove-empresas/${repo}/issues/42`,
     }));
-    return { client: { createIssue } as GitHubClient, createIssue };
+    return { client: { createIssue } as unknown as GitHubClient, createIssue };
   }
   function msg(text: string, userId = 1001) {
     return req({
