@@ -23,6 +23,16 @@ export interface TelegramClient {
 }
 
 /** Lo único que el bot necesita de GitHub; en las pruebas se sustituye por una simulación. */
+export interface OpenItem {
+  number: number;
+  title: string;
+  url: string;
+  isPr: boolean;
+  labels: string[];
+}
+
 export interface GitHubClient {
+  /** Issues y PR abiertas de un repo (la API de GitHub las devuelve juntas). */
+  listOpenItems(repo: string): Promise<OpenItem[]>;
   createIssue(repo: string, title: string, body: string): Promise<{ number: number; url: string }>;
 }
