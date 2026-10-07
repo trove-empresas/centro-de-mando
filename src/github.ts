@@ -1,8 +1,34 @@
 import type { GitHubClient } from "./env";
 import { GITHUB_OWNER } from "./repos";
 
+const API = "https://api.github.com";
+
 export function createGitHubClient(token: string): GitHubClient {
+  /** Llamada con cuerpo JSON; sin contenido ni token en el error. */
+  async function send(method: string, path: string, payload: unknown, what: string): Promise<void> {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/vnd.github+json",
+        "content-type": "application/json",
+        "user-agent": "centro-de-mando",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`GitHub ${what} falló: ${res.status}`);
+  }
+
   return {
+    async addComment(repo, number, body) {
+      await send("POST", `/repos/${GITHUB_OWNER}/${repo}/issues/${number}/comments`, { body }, "addComment");
+    },
+    async addLabel(repo, number, label) {
+      await send("POST", `/repos/${GITHUB_OWNER}/${repo}/issues/${number}/labels`, { labels: [label] }, "addLabel");
+    },
+    async closePullRequest(repo, number) {
+      await send("PATCH", `/repos/${GITHUB_OWNER}/${repo}/pulls/${number}`, { state: "closed" }, "closePullRequest");
+    },
     async listOpenItems(repo) {
       const res = await fetch(
         `https://api.github.com/repos/${GITHUB_OWNER}/${repo}/issues?state=open&per_page=100`,

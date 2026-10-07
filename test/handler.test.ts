@@ -219,3 +219,134 @@ describe("botones de PR", () => {
     expect(t.answerCallbackQuery).not.toHaveBeenCalled();
   });
 });
+
+describe("«Pedir cambios» y «Rechazar»", () => {
+  function fakeGitHub(fail?: "comment" | "label" | "close") {
+    const addComment = vi.fn(async () => {
+      if (fail === "comment") throw new Error("x");
+    });
+    const addLabel = vi.fn(async () => {
+      if (fail === "label") throw new Error("x");
+    });
+    const closePullRequest = vi.fn(async () => {
+      if (fail === "close") throw new Error("x");
+    });
+    return { client: { addComment, addLabel, closePullRequest } as unknown as GitHubClient, addComment, addLabel, closePullRequest };
+  }
+  const post = (body: unknown) =>
+    new Request("https://ejemplo.test/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "secreto-de-prueba" },
+      body: JSON.stringify(body),
+    });
+  const press = (data: string, userId = 1001) =>
+    post({ callback_query: { id: "cb1", from: { id: userId }, data, message: { chat: { id: 77 } } } });
+  const prompt = "Escribe en respuesta a este mensaje el comentario para la PR criterio#7 (se publicará).";
+  const reply = (text: string, over: { userId?: number; promptText?: string; fromBot?: boolean } = {}) =>
+    post({
+      message: {
+        chat: { id: 77 },
+        from: { id: over.userId ?? 1001 },
+        text,
+        reply_to_message: { text: over.promptText ?? prompt, from: { is_bot: over.fromBot ?? true } },
+      },
+    });
+
+  it("«Pedir cambios» pide el comentario con respuesta forzada y no toca GitHub", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(press("pr:c:criterio:7"), env, t.client, g.client);
+    expect(t.sendMessage).toHaveBeenCalledWith(77, expect.stringContaining("criterio#7"), undefined, { forceReply: true });
+    expect(g.addComment).not.toHaveBeenCalled();
+    expect(g.addLabel).not.toHaveBeenCalled();
+  });
+
+  it("la respuesta publica el comentario y pone «corregir»", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(reply("Falta una prueba"), env, t.client, g.client);
+    expect(g.addComment).toHaveBeenCalledWith("criterio", 7, "Falta una prueba");
+    expect(g.addLabel).toHaveBeenCalledWith("criterio", 7, "corregir");
+    expect(t.sendMessage).toHaveBeenCalledWith(77, expect.stringContaining("Hecho"));
+  });
+
+  it("respuesta de un usuario ajeno: nada ocurre", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(reply("hola", { userId: 9999 }), env, t.client, g.client);
+    expect(g.addComment).not.toHaveBeenCalled();
+    expect(t.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("respuesta a un mensaje que no es del bot: no se trata como comentario", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(reply("hola", { fromBot: false }), env, t.client, g.client);
+    expect(g.addComment).not.toHaveBeenCalled();
+  });
+
+  it("repo fuera de la lista en la respuesta: nada ocurre", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    const promptText = "Escribe en respuesta a este mensaje el comentario para la PR otro-repo#7";
+    await handleTelegramWebhook(reply("hola", { promptText }), env, t.client, g.client);
+    expect(g.addComment).not.toHaveBeenCalled();
+    expect(t.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("comentario vacío: no se publica nada", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(reply("   "), env, t.client, g.client);
+    expect(g.addComment).not.toHaveBeenCalled();
+    expect(t.sendMessage).toHaveBeenCalledWith(77, expect.stringContaining("vacío"));
+  });
+
+  it("si falla el comentario no se pone la etiqueta y se avisa", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub("comment");
+    await handleTelegramWebhook(reply("algo"), env, t.client, g.client);
+    expect(g.addLabel).not.toHaveBeenCalled();
+    expect(t.sendMessage).toHaveBeenCalledWith(77, expect.stringContaining("No he podido"));
+  });
+
+  it("si falla la etiqueta se avisa de que hay que ponerla a mano", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub("label");
+    await handleTelegramWebhook(reply("algo"), env, t.client, g.client);
+    expect(t.sendMessage).toHaveBeenCalledWith(77, expect.stringContaining("a mano"));
+  });
+
+  it("«Rechazar» cierra la PR sin fusionar y lo confirma", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(press("pr:r:criterio:7"), env, t.client, g.client);
+    expect(g.closePullRequest).toHaveBeenCalledWith("criterio", 7);
+    const [, text] = t.answerCallbackQuery.mock.calls[0] as unknown as [string, string];
+    expect(text).toContain("sin fusionar");
+  });
+
+  it("«Rechazar» de un usuario ajeno o de un repo no permitido: nada ocurre", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub();
+    await handleTelegramWebhook(press("pr:r:criterio:7", 9999), env, t.client, g.client);
+    await handleTelegramWebhook(press("pr:r:otro-repo:7"), env, t.client, g.client);
+    expect(g.closePullRequest).not.toHaveBeenCalled();
+    expect(t.answerCallbackQuery).not.toHaveBeenCalled();
+  });
+
+  it("«Rechazar» con fallo de GitHub avisa de que no se ha hecho nada", async () => {
+    const t = fakeTelegram();
+    const g = fakeGitHub("close");
+    await handleTelegramWebhook(press("pr:r:criterio:7"), env, t.client, g.client);
+    const [, text] = t.answerCallbackQuery.mock.calls[0] as unknown as [string, string];
+    expect(text).toContain("No he hecho nada");
+  });
+
+  it("«Rechazar» sin token de GitHub no actúa", async () => {
+    const t = fakeTelegram();
+    await handleTelegramWebhook(press("pr:r:criterio:7"), env, t.client);
+    const [, text] = t.answerCallbackQuery.mock.calls[0] as unknown as [string, string];
+    expect(text).toContain("falta el token");
+  });
+});

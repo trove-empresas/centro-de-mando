@@ -17,7 +17,12 @@ export interface InlineButton {
 
 /** Lo único que el bot necesita de Telegram; en las pruebas se sustituye por una simulación. */
 export interface TelegramClient {
-  sendMessage(chatId: number, text: string, buttons?: InlineButton[]): Promise<void>;
+  sendMessage(
+    chatId: number,
+    text: string,
+    buttons?: InlineButton[],
+    options?: { forceReply?: boolean },
+  ): Promise<void>;
   /** Confirma al usuario que se ha recibido la pulsación de un botón. */
   answerCallbackQuery(callbackQueryId: string, text: string): Promise<void>;
 }
@@ -35,4 +40,10 @@ export interface GitHubClient {
   /** Issues y PR abiertas de un repo (la API de GitHub las devuelve juntas). */
   listOpenItems(repo: string): Promise<OpenItem[]>;
   createIssue(repo: string, title: string, body: string): Promise<{ number: number; url: string }>;
+  /** Publica un comentario en una PR (o issue). */
+  addComment(repo: string, number: number, body: string): Promise<void>;
+  /** Añade una etiqueta a una PR (o issue). */
+  addLabel(repo: string, number: number, label: string): Promise<void>;
+  /** Cierra una PR sin fusionarla (reversible: se puede reabrir). */
+  closePullRequest(repo: string, number: number): Promise<void>;
 }

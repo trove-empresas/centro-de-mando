@@ -14,13 +14,14 @@ async function call(botToken: string, method: string, payload: unknown): Promise
 
 export function createTelegramClient(botToken: string): TelegramClient {
   return {
-    async sendMessage(chatId, text, buttons) {
+    async sendMessage(chatId, text, buttons, options) {
       const payload: Record<string, unknown> = { chat_id: chatId, text };
       if (buttons && buttons.length > 0) {
         payload.reply_markup = {
           inline_keyboard: [buttons.map((b) => ({ text: b.text, callback_data: b.data }))],
         };
       }
+      if (options?.forceReply) payload.reply_markup = { force_reply: true, selective: true };
       await call(botToken, "sendMessage", payload);
     },
     async answerCallbackQuery(callbackQueryId, text) {
