@@ -21,3 +21,16 @@ export function parsePrButton(data: string): { action: PrAction; repo: string; n
   const action = FROM_CODE[m[1]!];
   return action ? { action, repo: m[2]!, number: Number(m[3]) } : null;
 }
+
+const PROMPT_RE = /^Escribe en respuesta a este mensaje el comentario para la PR ([A-Za-z0-9._-]+)#(\d{1,9})\b/;
+
+/** Texto con el que el bot pide el comentario; de él se recupera la PR al llegar la respuesta (sin guardar estado). */
+export function changesPrompt(repo: string, number: number): string {
+  return `Escribe en respuesta a este mensaje el comentario para la PR ${repo}#${number} (se publicará en la PR y se pondrá la etiqueta «corregir»).`;
+}
+
+/** PR a la que se refiere una respuesta a `changesPrompt`; null si no lo es. */
+export function parseChangesPrompt(text: string): { repo: string; number: number } | null {
+  const m = PROMPT_RE.exec(text);
+  return m ? { repo: m[1]!, number: Number(m[2]) } : null;
+}

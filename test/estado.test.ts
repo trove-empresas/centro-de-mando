@@ -14,6 +14,9 @@ const item = (o: Partial<OpenItem> & { number: number }): OpenItem => ({
 
 const gh = (impl: GitHubClient["listOpenItems"]): GitHubClient => ({
   createIssue: vi.fn(),
+  addComment: vi.fn(),
+  addLabel: vi.fn(),
+  closePullRequest: vi.fn(),
   listOpenItems: vi.fn(impl),
 });
 

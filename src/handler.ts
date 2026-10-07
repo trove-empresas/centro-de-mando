@@ -1,14 +1,19 @@
 import type { Env, GitHubClient, TelegramClient } from "./env";
 import { handleEstadoCommand, isEstadoCommand } from "./estado";
 import { handleIssueCommand, isIssueCommand } from "./issue";
-import { parsePrButton } from "./pr-buttons";
+import { changesPrompt, parseChangesPrompt, parsePrButton } from "./pr-buttons";
 import { allowedRepos } from "./repos";
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
 interface TelegramUpdate {
-  callback_query?: { id?: string; from?: { id?: number }; data?: string };
-  message?: { chat?: { id?: number }; from?: { id?: number }; text?: string };
+  callback_query?: { id?: string; from?: { id?: number }; data?: string; message?: { chat?: { id?: number } } };
+  message?: {
+    chat?: { id?: number };
+    from?: { id?: number };
+    text?: string;
+    reply_to_message?: { text?: string; from?: { is_bot?: boolean } };
+  };
 }
 
 /** Comparación en tiempo constante (no revela cuántos caracteres coinciden). */
@@ -51,7 +56,7 @@ export async function handleTelegramWebhook(
 
   // 2) Solo Gonzalo: cualquier otro usuario se ignora sin responder.
   if (update.callback_query) {
-    return handleButton(update.callback_query, env, telegram);
+    return handleButton(update.callback_query, env, telegram, github);
   }
   const fromId = update.message?.from?.id;
   const chatId = update.message?.chat?.id;
@@ -60,6 +65,15 @@ export async function handleTelegramWebhook(
   }
 
   const text = update.message?.text ?? "";
+
+  // Respuesta al aviso de «Pedir cambios»: el comentario va a la PR con la etiqueta «corregir».
+  const asked = parseChangesPrompt(update.message?.reply_to_message?.text ?? "");
+  if (asked && update.message?.reply_to_message?.from?.is_bot === true) {
+    if (!allowedRepos(env.GITHUB_ALLOWED_REPOS).includes(asked.repo)) return new Response(null, { status: 200 });
+    await telegram.sendMessage(chatId, await requestChanges(asked.repo, asked.number, text, github));
+    return new Response(null, { status: 200 });
+  }
+
   if (isIssueCommand(text)) {
     const { reply } = await handleIssueCommand(text, allowedRepos(env.GITHUB_ALLOWED_REPOS), github);
     await telegram.sendMessage(chatId, reply);
@@ -76,17 +90,61 @@ export async function handleTelegramWebhook(
   return new Response(null, { status: 200 });
 }
 
-/** Pulsación de un botón: se revalida usuario y repo; en esta versión solo se confirma la recepción. */
+/** Publica el comentario y pone «corregir»; devuelve el mensaje para Gonzalo (nunca lanza). */
+async function requestChanges(repo: string, number: number, comment: string, github?: GitHubClient): Promise<string> {
+  const text = comment.trim();
+  if (text === "") return "El comentario está vacío: no he hecho nada. Pulsa «Pedir cambios» otra vez.";
+  if (!github) return "No puedo actuar sobre GitHub: falta el token. No he hecho nada.";
+  try {
+    await github.addComment(repo, number, text);
+  } catch {
+    return `No he podido publicar el comentario en ${repo}#${number}. No he hecho nada más.`;
+  }
+  try {
+    await github.addLabel(repo, number, "corregir");
+  } catch {
+    return `Comentario publicado en ${repo}#${number}, pero no he podido poner la etiqueta «corregir». Ponla a mano.`;
+  }
+  return `Hecho: comentario publicado en ${repo}#${number} y etiqueta «corregir» puesta.`;
+}
+
+/** Pulsación de un botón: se revalida usuario y repo antes de actuar. «Aprobar» aún no actúa. */
 async function handleButton(
   query: NonNullable<TelegramUpdate["callback_query"]>,
   env: Env,
   telegram: TelegramClient,
+  github?: GitHubClient,
 ): Promise<Response> {
   const ignored = new Response(null, { status: 200 });
   if (query.id === undefined || query.from?.id === undefined) return ignored;
   if (String(query.from.id) !== env.TELEGRAM_ALLOWED_USER_ID) return ignored;
   const button = parsePrButton(query.data ?? "");
   if (!button || !allowedRepos(env.GITHUB_ALLOWED_REPOS).includes(button.repo)) return ignored;
-  await telegram.answerCallbackQuery(query.id, `Recibido (${button.repo}#${button.number}). La acción aún no está disponible.`);
+  const ref = `${button.repo}#${button.number}`;
+
+  if (button.action === "changes") {
+    const chatId = query.message?.chat?.id;
+    if (chatId === undefined) return ignored;
+    await telegram.answerCallbackQuery(query.id, "Te pido el comentario.");
+    await telegram.sendMessage(chatId, changesPrompt(button.repo, button.number), undefined, { forceReply: true });
+    return ignored;
+  }
+
+  if (button.action === "reject") {
+    if (!github) {
+      await telegram.answerCallbackQuery(query.id, "No puedo actuar sobre GitHub: falta el token. No he hecho nada.");
+      return ignored;
+    }
+    try {
+      await github.closePullRequest(button.repo, button.number);
+    } catch {
+      await telegram.answerCallbackQuery(query.id, `No he podido cerrar ${ref}. No he hecho nada.`);
+      return ignored;
+    }
+    await telegram.answerCallbackQuery(query.id, `PR ${ref} cerrada sin fusionar. Se puede reabrir en GitHub.`);
+    return ignored;
+  }
+
+  await telegram.answerCallbackQuery(query.id, `Recibido (${ref}). La acción aún no está disponible.`);
   return ignored;
 }
