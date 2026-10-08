@@ -85,14 +85,28 @@ Es una «llave» de GitHub que solo abre lo que tú marques y caduca sola.
    - **Issues:** Read and write
    - **Pull requests:** Read and write
    - **Metadata:** Read-only (se marca sola)
-   - **Contents:** Read-only *solo si* la comprobación de «comprobaciones
-     obligatorias en verde» antes de fusionar lo necesitara; si no, sin
-     acceso. Se confirmará al programar esa parte y se actualizará aquí.
+   - **Contents:** **Read and write** (cambio respecto a lo previsto, ver el
+     aviso de abajo). Es el permiso que GitHub exige para fusionar una PR.
+   - **Checks:** Read-only y **Commit statuses:** Read-only, para leer si las
+     comprobaciones de la PR están en verde antes de fusionar.
    - **Administration: sin acceso** (así el bot no puede tocar ajustes ni
      protección de ramas: línea roja).
 8. **Generate token** y copia el valor (empieza por `github_pat_`).
    **Solo se muestra una vez.** No lo pegues en chats, issues ni PR: lo
    pondrás en Cloudflare en el momento de desplegar.
+
+**Aviso sobre «Contents: write» (decide Gonzalo):** el botón «Aprobar» fusiona
+la PR y, según la documentación de GitHub para tokens de grano fino
+(consultada el 2026-10-08), esa operación exige «Contents: write», que
+también permitiría al token escribir código en ramas que no estén
+protegidas. Lo que lo limita: (1) el token solo vale para los tres
+repositorios; (2) la protección de `main` (que gestionas tú) impide el push
+directo; (3) el bot nunca hace push, solo llama a «fusionar PR», sobre el
+commit ya comprobado. Si prefieres no dar ese permiso, la alternativa es
+dejar «Aprobar» sin fusionar (solo abrir la PR en GitHub): dímelo y se
+cambia. Los permisos «Checks» y «Commit statuses» de lectura no se han
+podido probar contra GitHub real desde el entorno de desarrollo: se
+comprobarán al desplegar.
 
 Nota: si la organización exige aprobar los tokens de grano fino, un
 propietario tendrá que aprobarlo en la configuración de la organización.
@@ -153,6 +167,15 @@ ejemplo con un gestor de contraseñas. Solo letras, números, `-` y `_`
   Antes de fusionar, el bot comprueba que las comprobaciones obligatorias de
   la PR están en verde; si no lo están, **no fusiona** y te explica por qué.
   La fusión sigue entrando por PR (no hay push directo a `main`).
+  *Implementado:* al pulsar «Aprobar» el bot comprueba el estado (abierta, no
+  borrador, hacia `main`, sin conflictos, todas las comprobaciones del último
+  commit terminadas y en verde; si no hay ninguna, tampoco fusiona) y solo
+  entonces muestra «¿Fusionar PR repo#N en main?» con «Sí, fusionar» y
+  «Cancelar». «Sí, fusionar» vuelve a comprobarlo y fusiona sobre el mismo
+  commit (si alguien sube algo entretanto, GitHub rechaza la fusión). El bot
+  no puede saber cuáles son las comprobaciones «obligatorias» (haría falta leer
+  la protección de ramas, permiso de administración que no se le da), así que
+  exige que **todas** estén en verde.
 
 ## 6. Coste total estimado
 

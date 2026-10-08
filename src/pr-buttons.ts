@@ -1,9 +1,9 @@
 import type { InlineButton } from "./env";
 
-export type PrAction = "approve" | "changes" | "reject";
+export type PrAction = "approve" | "changes" | "reject" | "confirm" | "cancel";
 
-const CODE: Record<PrAction, string> = { approve: "a", changes: "c", reject: "r" };
-const FROM_CODE: Record<string, PrAction> = { a: "approve", c: "changes", r: "reject" };
+const CODE: Record<PrAction, string> = { approve: "a", changes: "c", reject: "r", confirm: "m", cancel: "n" };
+const FROM_CODE: Record<string, PrAction> = { a: "approve", c: "changes", r: "reject", m: "confirm", n: "cancel" };
 
 /** Los tres botones de una PR; `data` lleva acción, repo (nombre corto) y número. */
 export function prButtons(repo: string, number: number): InlineButton[] {
@@ -14,9 +14,17 @@ export function prButtons(repo: string, number: number): InlineButton[] {
   ];
 }
 
+/** Segunda confirmación de «Aprobar»: solo «Sí, fusionar» fusiona. */
+export function mergeConfirmButtons(repo: string, number: number): InlineButton[] {
+  return [
+    { text: "✅ Sí, fusionar", data: `pr:${CODE.confirm}:${repo}:${number}` },
+    { text: "Cancelar", data: `pr:${CODE.cancel}:${repo}:${number}` },
+  ];
+}
+
 /** Interpreta el `data` de una pulsación; null si no tiene el formato esperado. */
 export function parsePrButton(data: string): { action: PrAction; repo: string; number: number } | null {
-  const m = /^pr:([acr]):([A-Za-z0-9._-]+):(\d{1,9})$/.exec(data);
+  const m = /^pr:([acrmn]):([A-Za-z0-9._-]+):(\d{1,9})$/.exec(data);
   if (!m) return null;
   const action = FROM_CODE[m[1]!];
   return action ? { action, repo: m[2]!, number: Number(m[3]) } : null;
