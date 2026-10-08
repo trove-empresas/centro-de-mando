@@ -1,7 +1,8 @@
 import type { Env, GitHubClient, TelegramClient } from "./env";
 import { handleEstadoCommand, isEstadoCommand } from "./estado";
 import { handleIssueCommand, isIssueCommand } from "./issue";
-import { changesPrompt, parseChangesPrompt, parsePrButton } from "./pr-buttons";
+import { canMerge, MERGE_BASE } from "./merge";
+import { changesPrompt, mergeConfirmButtons, parseChangesPrompt, parsePrButton } from "./pr-buttons";
 import { allowedRepos } from "./repos";
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
@@ -108,7 +109,7 @@ async function requestChanges(repo: string, number: number, comment: string, git
   return `Hecho: comentario publicado en ${repo}#${number} y etiqueta «corregir» puesta.`;
 }
 
-/** Pulsación de un botón: se revalida usuario y repo antes de actuar. «Aprobar» aún no actúa. */
+/** Pulsación de un botón: se revalida usuario y repo antes de actuar. «Aprobar» pide una segunda confirmación y solo «Sí, fusionar» fusiona. */
 async function handleButton(
   query: NonNullable<TelegramUpdate["callback_query"]>,
   env: Env,
@@ -145,6 +146,55 @@ async function handleButton(
     return ignored;
   }
 
-  await telegram.answerCallbackQuery(query.id, `Recibido (${ref}). La acción aún no está disponible.`);
+  const chatId = query.message?.chat?.id;
+  if (chatId === undefined) return ignored;
+
+  if (button.action === "cancel") {
+    await telegram.answerCallbackQuery(query.id, `Cancelado. ${ref} sigue como estaba.`);
+    return ignored;
+  }
+
+  if (!github) {
+    await telegram.answerCallbackQuery(query.id, "No puedo actuar sobre GitHub: falta el token. No he hecho nada.");
+    return ignored;
+  }
+
+  // «Aprobar» y «Sí, fusionar» comprueban el estado en el momento (el de la primera pulsación puede haber cambiado).
+  let status;
+  try {
+    status = await github.getPullRequestMergeStatus(button.repo, button.number);
+  } catch {
+    await telegram.answerCallbackQuery(query.id, `No he podido leer el estado de ${ref}. No he hecho nada.`);
+    return ignored;
+  }
+  const decision = canMerge(status);
+  if (!decision.ok) {
+    await telegram.answerCallbackQuery(query.id, `No fusiono ${ref}.`);
+    await telegram.sendMessage(chatId, `No fusiono ${ref}. ${decision.reason}`);
+    return ignored;
+  }
+
+  if (button.action === "approve") {
+    await telegram.answerCallbackQuery(query.id, "Comprobaciones en verde. Falta tu confirmación.");
+    await telegram.sendMessage(
+      chatId,
+      `¿Fusionar PR ${ref} en ${MERGE_BASE}? Las comprobaciones están en verde. Solo se fusiona si pulsas «Sí, fusionar».`,
+      mergeConfirmButtons(button.repo, button.number),
+    );
+    return ignored;
+  }
+
+  // button.action === "confirm": se fusiona sobre el commit que se acaba de comprobar.
+  try {
+    await github.mergePullRequest(button.repo, button.number, status.headSha);
+  } catch {
+    await telegram.answerCallbackQuery(query.id, `No he podido fusionar ${ref}. No ha cambiado nada.`);
+    await telegram.sendMessage(
+      chatId,
+      `No he podido fusionar ${ref} (puede que alguien haya subido cambios o que falte permiso). No ha cambiado nada.`,
+    );
+    return ignored;
+  }
+  await telegram.answerCallbackQuery(query.id, `PR ${ref} fusionada en ${MERGE_BASE}.`);
   return ignored;
 }

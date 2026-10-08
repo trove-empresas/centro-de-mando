@@ -1,3 +1,5 @@
+import type { PrMergeStatus } from "./merge";
+
 export interface Env {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
@@ -46,4 +48,8 @@ export interface GitHubClient {
   addLabel(repo: string, number: number, label: string): Promise<void>;
   /** Cierra una PR sin fusionarla (reversible: se puede reabrir). */
   closePullRequest(repo: string, number: number): Promise<void>;
+  /** Estado de la PR y de sus comprobaciones, para decidir si se puede fusionar. */
+  getPullRequestMergeStatus(repo: string, number: number): Promise<PrMergeStatus>;
+  /** Fusiona la PR solo si su último commit sigue siendo `sha` (si alguien subió algo, falla). */
+  mergePullRequest(repo: string, number: number, sha: string): Promise<void>;
 }

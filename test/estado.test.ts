@@ -17,6 +17,8 @@ const gh = (impl: GitHubClient["listOpenItems"]): GitHubClient => ({
   addComment: vi.fn(),
   addLabel: vi.fn(),
   closePullRequest: vi.fn(),
+  getPullRequestMergeStatus: vi.fn(),
+  mergePullRequest: vi.fn(),
   listOpenItems: vi.fn(impl),
 });
 
