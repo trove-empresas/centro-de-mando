@@ -46,4 +46,6 @@ export interface GitHubClient {
   addLabel(repo: string, number: number, label: string): Promise<void>;
   /** Cierra una PR sin fusionarla (reversible: se puede reabrir). */
   closePullRequest(repo: string, number: number): Promise<void>;
+  /** Crea una etiqueta del repo; devuelve false si ya existía (no es un error). */
+  createLabel(repo: string, name: string, color: string, description: string): Promise<boolean>;
 }
