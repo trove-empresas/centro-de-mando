@@ -154,6 +154,16 @@ ejemplo con un gestor de contraseñas. Solo letras, números, `-` y `_`
   la PR están en verde; si no lo están, **no fusiona** y te explica por qué.
   La fusión sigue entrando por PR (no hay push directo a `main`).
 
+## 5 bis. Etiquetas automáticas: comando `/etiquetas`
+
+Un agente no puede crear las etiquetas `necesita-gonzalo` y `corregir`. Al
+añadir un repositorio a la lista (`GITHUB_ALLOWED_REPOS`), envía `/etiquetas`
+al bot: crea en **cada repo de la lista** las que falten y no toca las que ya
+existen (se puede repetir sin problema). Fuera de la lista no actúa. Crear
+etiquetas usa el permiso **Issues: Read and write** ya previsto en la sección 3
+(según mi lectura de la documentación de GitHub; **no verificado contra GitHub
+real**: si diera 403, hay que revisar el permiso del token).
+
 ## 6. Coste total estimado
 
 ~**0 €/mes** (Cloudflare gratuito + APIs gratuitas). Si se prefiriera VPS,

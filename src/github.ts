@@ -29,6 +29,25 @@ export function createGitHubClient(token: string): GitHubClient {
     async closePullRequest(repo, number) {
       await send("PATCH", `/repos/${GITHUB_OWNER}/${repo}/pulls/${number}`, { state: "closed" }, "closePullRequest");
     },
+    async createLabel(repo, name, color, description) {
+      const res = await fetch(`${API}/repos/${GITHUB_OWNER}/${repo}/labels`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: "application/vnd.github+json",
+          "content-type": "application/json",
+          "user-agent": "centro-de-mando",
+        },
+        body: JSON.stringify({ name, color, description }),
+      });
+      if (res.ok) return true;
+      // 422 «already_exists»: la etiqueta ya estaba; no es un error.
+      if (res.status === 422) {
+        const data = (await res.json().catch(() => ({}))) as { errors?: { code?: string }[] };
+        if (data.errors?.some((e) => e.code === "already_exists")) return false;
+      }
+      throw new Error(`GitHub createLabel falló: ${res.status}`);
+    },
     async listOpenItems(repo) {
       const res = await fetch(
         `https://api.github.com/repos/${GITHUB_OWNER}/${repo}/issues?state=open&per_page=100`,
