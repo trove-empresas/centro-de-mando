@@ -5,6 +5,37 @@ export function isEstadoCommand(text: string): boolean {
   return /^\/estado(@\w+)?(\s|$)/.test(text);
 }
 
+/** Telegram rechaza mensajes de más de 4096 caracteres. */
+export const TELEGRAM_LIMIT = 4096;
+
+/**
+ * Reparte las entradas en mensajes de como máximo `limit` caracteres, sin
+ * partir una entrada por la mitad (salvo que una sola ya no quepa).
+ */
+export function splitMessages(entries: string[], limit = TELEGRAM_LIMIT): string[] {
+  const parts: string[] = [];
+  let current = "";
+  const flush = () => {
+    if (current !== "") parts.push(current);
+    current = "";
+  };
+  for (const entry of entries) {
+    if (current !== "" && current.length + 1 + entry.length <= limit) {
+      current += `\n${entry}`;
+      continue;
+    }
+    flush();
+    let rest = entry.replace(/^\n/, ""); // un mensaje nuevo no empieza con línea en blanco
+    while (rest.length > limit) {
+      parts.push(rest.slice(0, limit));
+      rest = rest.slice(limit);
+    }
+    current = rest;
+  }
+  flush();
+  return parts;
+}
+
 const HIGHLIGHT = ["necesita-gonzalo", "corregir"];
 
 function line(item: OpenItem): string {
@@ -20,24 +51,32 @@ function line(item: OpenItem): string {
 export async function handleEstadoCommand(
   repos: string[],
   github: GitHubClient | undefined,
-): Promise<{ reply: string }> {
-  if (!github) return { reply: "GitHub no está configurado todavía (falta el token)." };
-  const blocks: string[] = [];
+): Promise<{ reply: string; parts: string[] }> {
+  if (!github) {
+    const reply = "GitHub no está configurado todavía (falta el token).";
+    return { reply, parts: [reply] };
+  }
+  // Cada elemento es una entrada indivisible; el bloque de un repo empieza tras una línea en blanco.
+  const entries: string[] = [];
+  const addBlock = (...lines: string[]) => {
+    const [first = "", ...rest] = lines;
+    entries.push(entries.length > 0 ? `\n${first}` : first, ...rest);
+  };
   for (const repo of repos) {
     try {
       const items = await github.listOpenItems(repo);
       if (items.length === 0) {
-        blocks.push(`${repo}: nada abierto.`);
+        addBlock(`${repo}: nada abierto.`);
         continue;
       }
       // Primero lo que espera a Gonzalo.
       const sorted = [...items].sort(
         (a, b) => Number(b.labels.some((l) => HIGHLIGHT.includes(l))) - Number(a.labels.some((l) => HIGHLIGHT.includes(l))),
       );
-      blocks.push(`${repo} (${items.length} abiertas):\n${sorted.map(line).join("\n")}`);
+      addBlock(`${repo} (${items.length} abiertas):`, ...sorted.map(line));
     } catch {
-      blocks.push(`${repo}: no he podido consultar GitHub (ha dado error). No tengo datos de este repo.`);
+      addBlock(`${repo}: no he podido consultar GitHub (ha dado error). No tengo datos de este repo.`);
     }
   }
-  return { reply: blocks.join("\n\n") };
+  return { reply: entries.join("\n"), parts: splitMessages(entries) };
 }

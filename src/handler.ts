@@ -81,8 +81,8 @@ export async function handleTelegramWebhook(
   }
 
   if (isEstadoCommand(text)) {
-    const { reply } = await handleEstadoCommand(allowedRepos(env.GITHUB_ALLOWED_REPOS), github);
-    await telegram.sendMessage(chatId, reply);
+    const { parts } = await handleEstadoCommand(allowedRepos(env.GITHUB_ALLOWED_REPOS), github);
+    for (const part of parts) await telegram.sendMessage(chatId, part);
     return new Response(null, { status: 200 });
   }
 
