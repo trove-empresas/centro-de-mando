@@ -92,3 +92,43 @@ describe("/estado por Telegram", () => {
     expect(github.listOpenItems).not.toHaveBeenCalled();
   });
 });
+
+describe("/estado con respuestas largas", () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => item({ number: i + 1, title: `Tarea número ${i + 1} con un título largo para ocupar espacio` }));
+
+  it("trocea en varios mensajes de como máximo 4096 caracteres sin cortar entradas", async () => {
+    const { parts } = await handleEstadoCommand(["repo-a", "repo-b"], gh(async () => many(150)));
+    expect(parts.length).toBeGreaterThan(1);
+    for (const p of parts) expect(p.length).toBeLessThanOrEqual(4096);
+    const all = parts.join("\n");
+    for (let n = 1; n <= 150; n++) {
+      // Cada entrada llega entera: su título y su enlace en el mismo mensaje.
+      const entry = `Issue #${n}: Tarea número ${n} con un título largo para ocupar espacio\n  https://ejemplo.test/${n}`;
+      expect(parts.some((p) => p.includes(entry))).toBe(true);
+    }
+    expect(all).toContain("repo-b (150 abiertas)");
+  });
+
+  it("una respuesta corta sigue siendo un solo mensaje igual a reply", async () => {
+    const { reply, parts } = await handleEstadoCommand(["repo-a"], gh(async () => many(2)));
+    expect(parts).toEqual([reply]);
+  });
+
+  it("por Telegram envía cada trozo como un mensaje", async () => {
+    const env: Env = { TELEGRAM_WEBHOOK_SECRET: "s", TELEGRAM_ALLOWED_USER_ID: "1001", GITHUB_ALLOWED_REPOS: "repo-a" };
+    const req = new Request("https://ejemplo.test/telegram", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "s", "content-type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 77 }, from: { id: 1001 }, text: "/estado" } }),
+    });
+    const sendMessage = vi.fn(async () => {});
+    const t = { sendMessage, answerCallbackQuery: vi.fn() } as unknown as TelegramClient;
+    await handleTelegramWebhook(req, env, t, gh(async () => many(150)));
+    expect(sendMessage.mock.calls.length).toBeGreaterThan(1);
+    for (const call of sendMessage.mock.calls as unknown as [number, string][]) {
+      expect(call[0]).toBe(77);
+      expect(call[1].length).toBeLessThanOrEqual(4096);
+    }
+  });
+});
